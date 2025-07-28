@@ -1,0 +1,6 @@
+out
+build
+.vs**
+.cache
+compile_commands.json
+**.spv

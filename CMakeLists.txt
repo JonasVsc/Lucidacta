@@ -18,7 +18,7 @@ add_library(lucidacta
 			"src/lucid_vk_utils.c"
 			"src/lucid_utils.c"
 
-			"src/gui/lucid_gui.c"
+			"src/lucid_gui.c"
 			"src/lucid_experimental.c"
 )
 

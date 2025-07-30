@@ -4,30 +4,41 @@
 #include "lucid_result.h"
 #include "lucid_window.h"
 #include "lucid_renderer.h"
+#include "lucid_gui.h"
 #include <stdbool.h>
 #include <stdint.h>
 
 #define MAX_MESHES 100
 
+typedef struct LucidProfileInfo
+{
+	LARGE_INTEGER frequency;
+	LARGE_INTEGER startPerformanceCounterValue, endPerformanceCounterValue;
+
+
+	double startupElapsedTime;
+
+} LucidProfileInfo;
+
 typedef struct LucidContext_T
 {
 	LucidWindow_T window;
 	LucidRenderer_T renderer;
+	LucidProfileInfo profile;
 
 
 	LucidMesh_T meshes[MAX_MESHES];
 	uint32_t meshCount;
 
 
-	LARGE_INTEGER frequency;
-	LARGE_INTEGER startPerformanceCounterValue, endPerformanceCounterValue;
-
 } LucidContext_T;
 typedef struct LucidContext_T* LucidContext;
+
 
 extern LucidContext g_lucidContext;
 
 LucidResult LucidInit();
+void LucidInitProfileTools();
 void LucidShutdown();
 
 static inline bool LucidWindowShouldClose();
@@ -37,8 +48,16 @@ static inline void LucidEndFrame();
 static inline void LucidDrawMeshes();
 static inline bool LucidWindowShouldClose() { return g_lucidContext->window.close; }
 static inline void LucidRequestWindowClose() { g_lucidContext->window.close = true; }
+/// <summary>
+/// Start performance counter
+/// </summary>
 static inline void LucidStartPerformanceCounter();
+/// <summary>
+/// End performance counter
+/// </summary>
+/// <returns>elapsed time ( microseconds )</returns>
 static inline double LucidEndPerformanceCounter();
+static inline void LucidShowRendererPerformanceCounter();
 
 
 static inline void LucidBeginFrame()
@@ -202,16 +221,53 @@ static inline void LucidDrawMeshes()
 
 inline void LucidStartPerformanceCounter()
 {
-	QueryPerformanceCounter(&g_lucidContext->startPerformanceCounterValue);
+	QueryPerformanceCounter(&g_lucidContext->profile.startPerformanceCounterValue);
 }
 
 inline double LucidEndPerformanceCounter()
 {
-	QueryPerformanceCounter(&g_lucidContext->endPerformanceCounterValue);
-	return (double)(g_lucidContext->endPerformanceCounterValue.QuadPart - g_lucidContext->startPerformanceCounterValue.QuadPart) * 1000000.0 / g_lucidContext->frequency.QuadPart;
+	QueryPerformanceCounter(&g_lucidContext->profile.endPerformanceCounterValue);
+	return (double)(g_lucidContext->profile.endPerformanceCounterValue.QuadPart - g_lucidContext->profile.startPerformanceCounterValue.QuadPart) * 1000000.0 / g_lucidContext->profile.frequency.QuadPart;
 
 }
+static inline void LucidShowRendererPerformanceCounter()
+{
+	ImVec2 outerSize = { 0.0f, 0.0f };
+	igBegin("Profiling Tools", NULL, 0);
+	if (igBeginTable("##renderer_performance_counter", 2, ImGuiTableFlags_Borders, outerSize, 1))
+	{
+			// TABLE HEAD // 
+			igTableNextRow(0, 0);
+			igTableNextColumn();
+			igText("STAGE");
+			igTableNextColumn();
+			igText("ELAPSED TIME");
 
+			// TABLE BODY //
+			igTableNextRow(0, 0);
+			igTableNextColumn();
+			igText("Begin command");
+			igTableNextColumn();
+			igText("0");
+			igTableNextRow(0, 0);
+			igTableNextColumn();
+			igText("Record command");
+			igTableNextColumn();
+			igText("0");
+			igTableNextRow(0, 0);
+			igTableNextColumn();
+			igText("Submit command");
+			igTableNextColumn();
+			igText("0");
+			igTableNextRow(0, 0);
+			igTableNextColumn();
+			igText("Present");
+			igTableNextColumn();
+			igText("0");
+		igEndTable();
+	}
+	igEnd();
+}
 
 
 #endif // LUCID_CONTEXT_H_

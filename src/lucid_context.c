@@ -9,9 +9,14 @@ LucidResult LucidInit()
 	if (g_lucidContext == NULL)
 		return LUCID_ERROR;
 
-	QueryPerformanceFrequency(&g_lucidContext->frequency);
+	LucidInitProfileTools();
 
 	return LUCID_SUCCESS;
+}
+
+inline void LucidInitProfileTools()
+{
+	QueryPerformanceFrequency(&g_lucidContext->profile.frequency);
 }
 
 void LucidShutdown()

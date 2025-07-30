@@ -1,5 +1,4 @@
 #include "lucidacta/lucidacta.h"
-#include "gui/lucid_gui.h"
 
 #include "lucid_experimental.h"
 
@@ -9,6 +8,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	(void)hInstance; (void)hPrevInstance; (void)pCmdLine; (void)nCmdShow;
 
 	LucidInit();
+	LucidInitProfileTools();
 	
 	LucidStartPerformanceCounter();
 	LucidCreateWindow("Lucidacta", 1280, 720);
@@ -17,7 +17,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		
 	LucidCreateTriangle();
 	
-	double microSeconds = LucidEndPerformanceCounter();
+	g_lucidContext->profile.startupElapsedTime = LucidEndPerformanceCounter();
 
 
 	float timeAccumulator = 0.0f;
@@ -47,6 +47,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 		ImGui_ImplVulkan_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		igNewFrame();
+
+		// EXPERIMENTAL
+		LucidShowRendererPerformanceCounter();
 		
 		// FPSOVERLAY
 		{
@@ -81,7 +84,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 				ImGuiWindowFlags_NoBackground
 			);
 
-			igText("Start Time %.1f s", microSeconds / 100000.0f);
+			// igText("Start Time %.1f s", microSeconds / 100000.0f);
 
 			igEnd();
 		}

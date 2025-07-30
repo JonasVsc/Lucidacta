@@ -7,18 +7,28 @@
 #include "lucid_gui.h"
 #include <stdbool.h>
 #include <stdint.h>
+#include <float.h>
 
+#define LUCID_FRAME_HISTORY 60
 #define MAX_MESHES 100
 
 typedef struct LucidProfileInfo
 {
-	LARGE_INTEGER frequency;
 	LARGE_INTEGER startPerformanceCounterValue, endPerformanceCounterValue;
-
-
 	double startupElapsedTime;
 
+	double acquireImageTime;
+	double recordCommandBufferTime;
+	double submitCommandBufferTime;
+	double presentImageTime;
+
 } LucidProfileInfo;
+
+typedef struct LucidFPSOverlayData
+{
+	float updateFPSOverlayWindow;
+	float fpsDisplayed;
+} LucidFPSOverlayData;
 
 typedef struct LucidContext_T
 {
@@ -26,10 +36,21 @@ typedef struct LucidContext_T
 	LucidRenderer_T renderer;
 	LucidProfileInfo profile;
 
-
 	LucidMesh_T meshes[MAX_MESHES];
 	uint32_t meshCount;
 
+	LARGE_INTEGER currentFrame, lastFrame;
+	LARGE_INTEGER frequency;
+	float frameTime; // Stable
+	float deltaTime; // Stable
+
+	float frameDeltaBuffer[LUCID_FRAME_HISTORY];
+	float frameDeltaAccum;
+	int frameDeltaIndex;
+	int frameDeltaCount;
+	float smoothedFPS;
+
+	LucidFPSOverlayData fpsOverlay;
 
 } LucidContext_T;
 typedef struct LucidContext_T* LucidContext;
@@ -38,16 +59,14 @@ typedef struct LucidContext_T* LucidContext;
 extern LucidContext g_lucidContext;
 
 LucidResult LucidInit();
-void LucidInitProfileTools();
 void LucidShutdown();
 
 static inline bool LucidWindowShouldClose();
 static inline void LucidRequestWindowClose();
+static inline void LucidUpdateDeltaTime();
 static inline void LucidBeginFrame();
 static inline void LucidEndFrame();
 static inline void LucidDrawMeshes();
-static inline bool LucidWindowShouldClose() { return g_lucidContext->window.close; }
-static inline void LucidRequestWindowClose() { g_lucidContext->window.close = true; }
 /// <summary>
 /// Start performance counter
 /// </summary>
@@ -57,7 +76,56 @@ static inline void LucidStartPerformanceCounter();
 /// </summary>
 /// <returns>elapsed time ( microseconds )</returns>
 static inline double LucidEndPerformanceCounter();
-static inline void LucidShowRendererPerformanceCounter();
+static inline void LucidFPSOverlay();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+static inline bool LucidWindowShouldClose() { return g_lucidContext->window.close; }
+
+static inline void LucidRequestWindowClose() { g_lucidContext->window.close = true; }
+/// <summary>
+/// Update delta time and frame time
+/// </summary>
+static inline void LucidUpdateDeltaTime()
+{
+	QueryPerformanceCounter(&g_lucidContext->currentFrame);
+	float dt = (float)(g_lucidContext->currentFrame.QuadPart - g_lucidContext->lastFrame.QuadPart) / g_lucidContext->frequency.QuadPart;
+
+	g_lucidContext->deltaTime = dt;
+	g_lucidContext->frameTime = 1.0f / dt;
+	g_lucidContext->lastFrame = g_lucidContext->currentFrame;
+
+	// ===== Smooth FPS =====
+	int idx = g_lucidContext->frameDeltaIndex;
+	int count = g_lucidContext->frameDeltaCount;
+
+	g_lucidContext->frameDeltaAccum += dt - g_lucidContext->frameDeltaBuffer[idx];
+	g_lucidContext->frameDeltaBuffer[idx] = dt;
+
+	g_lucidContext->frameDeltaIndex = (idx + 1) % LUCID_FRAME_HISTORY;
+	g_lucidContext->frameDeltaCount = count < LUCID_FRAME_HISTORY ? count + 1 : LUCID_FRAME_HISTORY;
+
+	float averageDelta = g_lucidContext->frameDeltaAccum / (float)g_lucidContext->frameDeltaCount;
+	g_lucidContext->smoothedFPS = averageDelta > 0.0f ? (1.0f / averageDelta) : FLT_MAX;
+}
 
 
 static inline void LucidBeginFrame()
@@ -65,12 +133,14 @@ static inline void LucidBeginFrame()
 	vkWaitForFences(g_lucidContext->renderer.device, 1, &g_lucidContext->renderer.frameFence[g_lucidContext->renderer.frame], VK_TRUE, UINT64_MAX);
 	vkResetFences(g_lucidContext->renderer.device, 1, &g_lucidContext->renderer.frameFence[g_lucidContext->renderer.frame]);
 
+	// ACQUIRE IMAGE
 	if (vkAcquireNextImageKHR(g_lucidContext->renderer.device, g_lucidContext->renderer.swapchain, UINT64_MAX, g_lucidContext->renderer.acquireSemaphore[g_lucidContext->renderer.frame], VK_NULL_HANDLE, &g_lucidContext->renderer.imageIndex) != VK_SUCCESS)
 	{
 		// TODO: HANDLE RESIZE/MINIMIZE
 		return;
 	}
 
+	// RECORD COMMAND BUFFER
 	vkResetCommandBuffer(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], 0);
 	VkCommandBufferBeginInfo cmd_begin = { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 	vkBeginCommandBuffer(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], &cmd_begin);
@@ -167,6 +237,8 @@ static inline void LucidEndFrame()
 
 	vkEndCommandBuffer(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame]);
 
+	// SUBMIT COMMAND BUFFER
+
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 	VkSemaphore wait_semaphores[] = { g_lucidContext->renderer.acquireSemaphore[g_lucidContext->renderer.frame] };
 	VkSemaphore signal_semaphores[] = { g_lucidContext->renderer.submitSemaphore[g_lucidContext->renderer.frame] };
@@ -183,6 +255,9 @@ static inline void LucidEndFrame()
 	};
 
 	vkQueueSubmit(g_lucidContext->renderer.graphicsQueue, 1, &submit_info, g_lucidContext->renderer.frameFence[g_lucidContext->renderer.frame]);
+
+
+	// PRESENT IMAGE
 
 	VkSwapchainKHR swapchains[] = { g_lucidContext->renderer.swapchain };
 
@@ -207,6 +282,8 @@ static inline void LucidEndFrame()
 
 static inline void LucidDrawMeshes()
 {
+	vkCmdBindPipeline(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], VK_PIPELINE_BIND_POINT_GRAPHICS, g_lucidContext->renderer.pipeline);
+
 	for (uint32_t i = 0; i < g_lucidContext->meshCount; ++i)
 	{
 		LucidPushConstants push = { 0 };
@@ -219,53 +296,40 @@ static inline void LucidDrawMeshes()
 	}
 }
 
-inline void LucidStartPerformanceCounter()
+static inline void LucidStartPerformanceCounter()
 {
 	QueryPerformanceCounter(&g_lucidContext->profile.startPerformanceCounterValue);
 }
 
-inline double LucidEndPerformanceCounter()
+static inline double LucidEndPerformanceCounter()
 {
 	QueryPerformanceCounter(&g_lucidContext->profile.endPerformanceCounterValue);
-	return (double)(g_lucidContext->profile.endPerformanceCounterValue.QuadPart - g_lucidContext->profile.startPerformanceCounterValue.QuadPart) * 1000000.0 / g_lucidContext->profile.frequency.QuadPart;
+	return (double)(g_lucidContext->profile.endPerformanceCounterValue.QuadPart - g_lucidContext->profile.startPerformanceCounterValue.QuadPart) * 1000000.0 / g_lucidContext->frequency.QuadPart;
 
 }
-static inline void LucidShowRendererPerformanceCounter()
-{
-	ImVec2 outerSize = { 0.0f, 0.0f };
-	igBegin("Profiling Tools", NULL, 0);
-	if (igBeginTable("##renderer_performance_counter", 2, ImGuiTableFlags_Borders, outerSize, 1))
-	{
-			// TABLE HEAD // 
-			igTableNextRow(0, 0);
-			igTableNextColumn();
-			igText("STAGE");
-			igTableNextColumn();
-			igText("ELAPSED TIME");
 
-			// TABLE BODY //
-			igTableNextRow(0, 0);
-			igTableNextColumn();
-			igText("Begin command");
-			igTableNextColumn();
-			igText("0");
-			igTableNextRow(0, 0);
-			igTableNextColumn();
-			igText("Record command");
-			igTableNextColumn();
-			igText("0");
-			igTableNextRow(0, 0);
-			igTableNextColumn();
-			igText("Submit command");
-			igTableNextColumn();
-			igText("0");
-			igTableNextRow(0, 0);
-			igTableNextColumn();
-			igText("Present");
-			igTableNextColumn();
-			igText("0");
-		igEndTable();
+static inline void LucidFPSOverlay()
+{
+	g_lucidContext->fpsOverlay.updateFPSOverlayWindow += g_lucidContext->deltaTime;
+	if (g_lucidContext->fpsOverlay.updateFPSOverlayWindow > 0.5f)
+	{
+		g_lucidContext->fpsOverlay.fpsDisplayed = g_lucidContext->smoothedFPS;
+		g_lucidContext->fpsOverlay.updateFPSOverlayWindow = 0.0f;
 	}
+
+	ImVec2 vec = { 0, 0 };
+	ImVec2 pivot = { 0, 0 };
+	igSetNextWindowPos(vec, ImGuiCond_Always, pivot);
+	igBegin("FPSOverlay", NULL,
+		ImGuiWindowFlags_NoDecoration |
+		ImGuiWindowFlags_AlwaysAutoResize |
+		ImGuiWindowFlags_NoSavedSettings |
+		ImGuiWindowFlags_NoFocusOnAppearing |
+		ImGuiWindowFlags_NoNav |
+		ImGuiWindowFlags_NoBackground
+	);
+	static float update = 0.0f;
+	igText("FPS %.1f", g_lucidContext->fpsOverlay.fpsDisplayed);
 	igEnd();
 }
 

@@ -5,10 +5,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 find_package(Vulkan)
-
 add_subdirectory(3rdparty/cimgui)
 
 include_directories(include src)
+
 
 add_library(lucidacta 
 	STATIC	"src/lucid_context.c"

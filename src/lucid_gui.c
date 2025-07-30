@@ -32,7 +32,7 @@ void LucidSetupImGui()
 	ImGuiIO* io = igGetIO_Nil(); (void)io;
 	io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 	io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
-	igStyleColorsDark(NULL);
+	igStyleColorsClassic(NULL);
 
 	ImGui_ImplVulkan_InitInfo initInfo = {
 		.ApiVersion = VK_API_VERSION_1_4,

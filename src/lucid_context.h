@@ -4,13 +4,24 @@
 #include "lucid_result.h"
 #include "lucid_window.h"
 #include "lucid_renderer.h"
-
 #include <stdbool.h>
+#include <stdint.h>
+
+#define MAX_MESHES 100
 
 typedef struct LucidContext_T
 {
 	LucidWindow_T window;
 	LucidRenderer_T renderer;
+
+
+	LucidMesh_T meshes[MAX_MESHES];
+	uint32_t meshCount;
+
+
+	LARGE_INTEGER frequency;
+	LARGE_INTEGER startPerformanceCounterValue, endPerformanceCounterValue;
+
 } LucidContext_T;
 typedef struct LucidContext_T* LucidContext;
 
@@ -19,8 +30,15 @@ extern LucidContext g_lucidContext;
 LucidResult LucidInit();
 void LucidShutdown();
 
+static inline bool LucidWindowShouldClose();
+static inline void LucidRequestWindowClose();
+static inline void LucidBeginFrame();
+static inline void LucidEndFrame();
+static inline void LucidDrawMeshes();
 static inline bool LucidWindowShouldClose() { return g_lucidContext->window.close; }
 static inline void LucidRequestWindowClose() { g_lucidContext->window.close = true; }
+static inline void LucidStartPerformanceCounter();
+static inline double LucidEndPerformanceCounter();
 
 
 static inline void LucidBeginFrame()
@@ -100,7 +118,7 @@ static inline void LucidBeginFrame()
 	vkCmdSetViewport(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], 0, 1, &viewport);
 	vkCmdSetScissor(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], 0, 1, &scissor);
 
-	// vkCmdBindPipeline(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], VK_PIPELINE_BIND_POINT_GRAPHICS, g_lucidContext->renderer.pipeline);
+	vkCmdBindPipeline(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], VK_PIPELINE_BIND_POINT_GRAPHICS, g_lucidContext->renderer.pipeline);
 }
 
 static inline void LucidEndFrame()
@@ -167,4 +185,33 @@ static inline void LucidEndFrame()
 
 	g_lucidContext->renderer.frame = (g_lucidContext->renderer.frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
+
+static inline void LucidDrawMeshes()
+{
+	for (uint32_t i = 0; i < g_lucidContext->meshCount; ++i)
+	{
+		LucidPushConstants push = { 0 };
+		push.vertex_address = g_lucidContext->meshes[i].vertexAddress;
+
+		vkCmdPushConstants(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], g_lucidContext->renderer.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(LucidPushConstants), &push);
+		vkCmdBindIndexBuffer(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], g_lucidContext->meshes[i].indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+		vkCmdDrawIndexed(g_lucidContext->renderer.commandBuffers[g_lucidContext->renderer.frame], g_lucidContext->meshes[i].indexCount, 1, 0, 0, 0);
+	}
+}
+
+inline void LucidStartPerformanceCounter()
+{
+	QueryPerformanceCounter(&g_lucidContext->startPerformanceCounterValue);
+}
+
+inline double LucidEndPerformanceCounter()
+{
+	QueryPerformanceCounter(&g_lucidContext->endPerformanceCounterValue);
+	return (double)(g_lucidContext->endPerformanceCounterValue.QuadPart - g_lucidContext->startPerformanceCounterValue.QuadPart) * 1000000.0 / g_lucidContext->frequency.QuadPart;
+
+}
+
+
+
 #endif // LUCID_CONTEXT_H_

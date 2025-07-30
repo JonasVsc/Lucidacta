@@ -1,5 +1,6 @@
 #include "lucid_renderer.h"
 #include "lucid_context.h"
+#include "lucid_pipeline.h"
 #include "lucid_utils.h"
 
 static void createInstance(LucidRenderer ctx);
@@ -12,7 +13,7 @@ static void createSwapchainImageViews(LucidRenderer ctx);
 static void createCommandPool(LucidRenderer ctx);
 static void allocateCommandBuffers(LucidRenderer ctx);
 static void createSyncObjects(LucidRenderer ctx);
-// static void createPipeline(LucidRenderer ctx);
+static void createPipeline(LucidRenderer ctx);
 
 static VkPresentModeKHR selectPresentMode(LucidRenderer ctx, VkPresentModeKHR preferred_present_mode);
 static VkSurfaceFormatKHR selectSurfaceFormat(LucidRenderer ctx, VkSurfaceFormatKHR preferred_surface_format);
@@ -38,6 +39,7 @@ LucidResult LucidCreateRenderer()
 	createCommandPool(ctx);
 	allocateCommandBuffers(ctx);
 	createSyncObjects(ctx);
+	createPipeline(ctx);
 
 	return LUCID_SUCCESS;
 }
@@ -47,6 +49,15 @@ void LucidDestroyRenderer()
 	LucidRenderer ctx = &g_lucidContext->renderer;
 
 	vkDeviceWaitIdle(ctx->device);
+
+	for (int32_t i = g_lucidContext->meshCount - 1; i >= 0; i--)
+	{
+		vkDestroyBuffer(ctx->device, g_lucidContext->meshes[i].vertexBuffer, NULL);
+		vkDestroyBuffer(ctx->device, g_lucidContext->meshes[i].indexBuffer, NULL);
+
+		vkFreeMemory(ctx->device, g_lucidContext->meshes[i].vertexMemory, NULL);
+		vkFreeMemory(ctx->device, g_lucidContext->meshes[i].indexMemory, NULL);
+	}
 
 	for (uint32_t i = 0; i < ctx->swapchainImageCount; ++i)
 	{
@@ -210,7 +221,7 @@ static void createSwapchain(LucidRenderer ctx)
 
 	ctx->swapchainExtent = selectSurfaceExtent(ctx);
 	ctx->swapchainFormat = selectSurfaceFormat(ctx, preffered_format);
-	VkPresentModeKHR present_mode = selectPresentMode(ctx, VK_PRESENT_MODE_FIFO_KHR);
+	VkPresentModeKHR present_mode = selectPresentMode(ctx, VK_PRESENT_MODE_IMMEDIATE_KHR);
 
 	VkSurfaceCapabilitiesKHR capabilities = { 0 };
 	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx->physicalDevice, ctx->surface, &capabilities);
@@ -326,6 +337,21 @@ static void createSyncObjects(LucidRenderer ctx)
 	}
 
 	vkCreateFence(ctx->device, &fence_create_info, NULL, &ctx->immediateFence);
+}
+
+void createPipeline(LucidRenderer ctx)
+{
+	ctx->layout = LucidCreatePipelineLayout(ctx->device);
+
+	LucidPipelineCreateInfo pipelineCreateInfo = {
+		.layout = ctx->layout,
+		.vertShader = "shaders/shader.vert.spv",
+		.fragShader = "shaders/shader.frag.spv",
+		.format = ctx->swapchainFormat.format
+	};
+
+	ctx->pipeline = LucidCreatePipeline(ctx->device, &pipelineCreateInfo);
+
 }
 
 static VkPresentModeKHR selectPresentMode(LucidRenderer ctx, VkPresentModeKHR preferred_present_mode)

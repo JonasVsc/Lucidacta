@@ -8,6 +8,9 @@ LucidResult LucidInit()
 	g_lucidContext = calloc(1, sizeof(LucidContext_T));
 	if (g_lucidContext == NULL)
 		return LUCID_ERROR;
+
+	QueryPerformanceFrequency(&g_lucidContext->frequency);
+
 	return LUCID_SUCCESS;
 }
 
